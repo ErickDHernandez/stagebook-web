@@ -42,7 +42,7 @@ export default function WelcomePage() {
       {/* BLOQUE 2: TÍTULO CENTRAL (STAGEBOOK) */}
       <div className="flex flex-col items-center mt-4">
         <h1 className="text-6xl md:text-8xl font-extrabold tracking-tighter">
-          STAGE<span className="text-red-800">BOOK</span>
+          STAGE<span className="text-[#FF0000]">BOOK</span>
         </h1>
       <div className="text-xs font-mono uppercase tracking-[0.3em] mt-2 text-zinc-500">
         <Typewriter 
@@ -58,7 +58,7 @@ export default function WelcomePage() {
         <div className="max-w-2xl text-left"> {/* text-left alinea a la izquierda */}
           <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-2  leading-tight">
             Control total en el <br />
-            <span className="text-red-600">escenario</span>
+            <span className="text-[#FF0000]">escenario</span>
         {/* Decoración vertical roja */}
         <div className="mt-2 h-1 w-32 bg-purple-600 rounded-full animate-pulse"></div>
           </h2>
