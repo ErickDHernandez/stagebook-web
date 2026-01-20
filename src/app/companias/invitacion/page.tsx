@@ -14,44 +14,63 @@ export default function ConfirmarInvitacionPage() {
     if (token) procesarAceptacion();
   }, [token]);
 
-  async function procesarAceptacion() {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Debes iniciar sesión para aceptar");
+async function procesarAceptacion() {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Debes iniciar sesión para aceptar");
 
-      // 1. Validar y obtener la invitación
-      const { data: invite, error: fetchError } = await supabase
-        .from('company_invitations')
-        .select('*')
-        .eq('token', token)
-        .eq('status', 'pendiente')
-        .single();
+    // 1. Obtener invitación válida
+    const { data: invite, error: fetchError } = await supabase
+      .from('company_invitations')
+      .select('*')
+      .eq('token', token)
+      .eq('status', 'pendiente')
+      .single();
 
-      if (fetchError || !invite) throw new Error("Invitación no válida o expirada");
+    if (fetchError || !invite) throw new Error("Invitación inválida");
 
-      // 2. Unirse a la compañía (Historial)
+    // 2. Verificar si ya pertenece a la compañía
+    const { data: existingMember } = await supabase
+      .from('company_members')
+      .select('id')
+      .eq('company_id', invite.company_id)
+      .eq('profile_id', user.id)
+      .maybeSingle();
+
+    if (!existingMember) {
       const { error: joinError } = await supabase
         .from('company_members')
-        .insert([{
+        .insert({
           company_id: invite.company_id,
           profile_id: user.id,
           role: invite.role,
           is_active: true,
           joined_at: new Date().toISOString()
-        }]);
+        });
 
-      if (joinError) throw joinError;
-
-      // 3. Marcar invitación como aceptada
-      await supabase.from('company_invitations').update({ status: 'aceptada' }).eq('token', token);
-
-      setStatus('exito');
-      setTimeout(() => router.push('/dashboard'), 3000);
-    } catch (err) {
-      console.error(err);
-      setStatus('error');
+      // Si falla por duplicado, no romper flujo
+      if (joinError && joinError.code !== '23505') {
+        throw joinError;
+      }
     }
+
+    // 3. Marcar invitación como aceptada (INVALIDA TOKEN)
+    await supabase
+      .from('company_invitations')
+      .update({
+        status: 'aceptada',
+        accepted_at: new Date().toISOString()
+      })
+      .eq('token', token);
+
+    setStatus('exito');
+    setTimeout(() => router.push('/dashboard'), 2500);
+
+  } catch (err) {
+    console.error(err);
+    setStatus('error');
   }
+}
 
   return (
     <div className="min-h-screen bg-black flex items-center justify-center p-6 text-[#F9F6EE] font-mono">

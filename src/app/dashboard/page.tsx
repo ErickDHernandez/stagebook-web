@@ -14,12 +14,31 @@ import {
   XMarkIcon,
   CheckIcon
 } from '@heroicons/react/24/outline';
+import StatusPopup from '@/src/components/StatusPop';
+import ErrorModal from '@/src/components/ErrorModal';
 
 export default function DashboardPage() {
   const [showNotifications, setShowNotifications] = useState(false); 
   const [invitations, setInvitations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [myCompanies, setMyCompanies] = useState<any[]>([]);
+  const [showAllCompanies, setShowAllCompanies] = useState(false);
+  //Manejo de pops
+  const [popup, setPopup] = useState<{
+  show: boolean;
+  message: string;
+  type: 'success' | 'error';
+}>({
+  show: false,
+  message: '',
+  type: 'success'
+});
+  //Manejo de errores
+  const [errorModal, setErrorModal] = useState<{
+  title: string;
+  message: string;
+} | null>(null);
+
 
   useEffect(() => {
     fetchInvitations();
@@ -34,7 +53,7 @@ async function fetchMyCompanies() {
     .from('company_members')
     .select(`
       role,
-      companies ( id, name )
+      companies ( id, name, image_url )
     `)
     .eq('profile_id', user.id)
     .eq('is_active', true);
@@ -97,12 +116,29 @@ async function fetchMyCompanies() {
     setInvitations(prev => prev.filter(i => i.id !== invite.id));
     fetchMyCompanies(); // Esto hará que aparezca debajo de Producciones Totales
     
-    alert("¡Te has unido a la compañía!");
+    setPopup({
+      show: true,
+      message: "Te has unido a la compañía correctamente",
+      type: "success"
+    });
+
+    setTimeout(() => {
+      setPopup(prev => ({ ...prev, show: false }));
+    }, 3000);
+
   } catch (err) {
     console.error("Error al aceptar:", err);
-    alert("No se pudo procesar la aceptación.");
+
+setErrorModal({
+  title: "No se pudo aceptar la invitación",
+  message: "Ocurrió un error al procesar la invitación. Intenta nuevamente."
+});
+
+    setTimeout(() => {
+      setPopup(prev => ({ ...prev, show: false }));
+    }, 3000);
+      }
   }
-}
 
   const activeProjects = [
     { id: '1', title: 'Hamlet: El Retorno', characters: 12, status: 'Ensayo' },
@@ -114,6 +150,11 @@ async function fetchMyCompanies() {
     { id: '101', type: 'Ensayo General', project: 'Hamlet', time: '18:00 hrs', date: 'Hoy' },
     { id: '102', type: 'Prueba de Vestuario', project: 'Bodas de Sangre', time: '10:00 hrs', date: 'Mañana' },
   ];
+
+const visibleCompanies = showAllCompanies
+  ? myCompanies
+  : myCompanies.slice(0, 2);
+
 
   return (
     <main className="min-h-screen bg-black text-[#F9F6EE] flex flex-col md:flex-row relative">
@@ -213,8 +254,9 @@ async function fetchMyCompanies() {
   </div>
 
   <div className="grid grid-cols-1 gap-2">
+    
     {myCompanies.length > 0 ? (
-      myCompanies.map((item, idx) => (
+      visibleCompanies.map((item, idx) => (
         <div 
           key={idx} 
           className="group relative overflow-hidden bg-zinc-950 border border-zinc-900 p-4 rounded-xl hover:border-red-600/40 transition-all duration-500"
@@ -224,19 +266,49 @@ async function fetchMyCompanies() {
           
           <div className="flex items-center justify-between relative z-10">
             <div className="flex items-center gap-4">
-              <div className="w-10 h-10 rounded-lg bg-zinc-900 flex items-center justify-center border border-zinc-800 group-hover:scale-110 transition-transform">
+          <div className="w-10 h-10 rounded-lg overflow-hidden bg-zinc-900 border border-zinc-800 group-hover:scale-110 transition-transform">
+            {item.companies?.image_url ? (
+              <img
+                src={item.companies.image_url}
+                alt={item.companies.name}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
                 <span className="text-sm font-bold text-red-600">
                   {item.companies?.name?.charAt(0).toUpperCase()}
                 </span>
               </div>
-              <div>
-                <h4 className="text-[11px] font-bold uppercase tracking-tight text-[#F9F6EE]">
-                  {item.companies?.name}
-                </h4>
-                <p className="text-[9px] font-mono text-zinc-500 uppercase mt-0.5 italic">
-                  {item.role}
-                </p>
-              </div>
+            )}
+          </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <h4 className="text-[11px] font-bold uppercase tracking-tight text-[#F9F6EE]">
+                {item.companies?.name}
+              </h4>
+
+              {item.role === "Director" && (
+                <span
+                  className="
+                    text-[7px] font-mono uppercase tracking-widest
+                    px-2 py-0.5 rounded-full
+                    bg-red-600/10 text-red-500
+                    border border-red-600/30
+                    shadow-[0_0_10px_rgba(220,38,38,0.3)]
+                  "
+                >
+                  Director
+                </span>
+              )}
+            </div>
+
+          {item.role?.toLowerCase() !== "director" && (
+            <p className="text-[9px] font-mono text-zinc-500 uppercase mt-0.5 italic">
+              {item.role}
+            </p>
+          )}
+
+
             </div>
             
             {/* Distintivo Visual Único (Status Dot con Glow) */}
@@ -258,6 +330,18 @@ async function fetchMyCompanies() {
           </div>
         )}
       </div>
+{myCompanies.length > 2 && (
+  <button
+    onClick={() => setShowAllCompanies(true)}
+    className="w-full py-2 mt-2 text-[9px] font-mono uppercase tracking-widest
+               border border-zinc-800 rounded-xl text-zinc-500
+               hover:text-white hover:border-red-600 transition-all"
+  >
+    Ver todas ({myCompanies.length})
+  </button>
+)}
+
+
     </div>
           </div>
         </header>
@@ -319,6 +403,52 @@ async function fetchMyCompanies() {
 
         </div>
       </div>
+      {showAllCompanies && (
+  <div className="fixed inset-0 z-[200] bg-black/70 backdrop-blur-sm flex items-center justify-center">
+    
+    <div className="bg-zinc-950 border border-zinc-800 rounded-3xl w-[90%] max-w-md max-h-[80vh] p-6 shadow-2xl animate-in fade-in zoom-in">
+      
+      {/* HEADER */}
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-[10px] font-mono uppercase tracking-widest text-zinc-400">
+          Todas mis compañías
+        </h3>
+        <button onClick={() => setShowAllCompanies(false)}>
+          <XMarkIcon className="w-4 h-4 text-zinc-500 hover:text-white" />
+        </button>
+      </div>
+
+      {/* LISTA SCROLL */}
+      <div className="space-y-2 overflow-y-auto max-h-[60vh] pr-1">
+        {myCompanies.map((item, idx) => (
+          <div
+            key={idx}
+            className="bg-zinc-900/50 border border-zinc-800 p-4 rounded-xl hover:border-red-600/40 transition-all"
+          >
+            <p className="text-[10px] font-bold uppercase">{item.companies?.name}</p>
+            <p className="text-[8px] font-mono text-zinc-500 uppercase italic">
+              {item.role}
+            </p>
+          </div>
+        ))}
+      </div>
+
+    </div>
+  </div>
+)}
+<StatusPopup
+  show={popup.show}
+  message={popup.message}
+  type={popup.type}
+  onClose={() => setPopup(prev => ({ ...prev, show: false }))}
+/>
+          {errorModal && (
+            <ErrorModal
+              title={errorModal.title}
+              message={errorModal.message}
+              onClose={() => setErrorModal(null)}
+            />
+          )}
     </main>
   );
 }
