@@ -265,7 +265,7 @@ async function fetchMyCompanies() {
         {/* GRID DE CONTENIDO PRINCIPAL */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
           
-          {/* COLUMNA IZQUIERDA: PROYECTOS (Ocupa 2 de 3 columnas) */}
+          {/* COLUMNA IZQUIERDA: PROYECTOS */}
           <div className="lg:col-span-2 space-y-8">
             <h2 className="text-[10px] font-mono uppercase tracking-[0.3em] text-zinc-600 border-b border-zinc-900 pb-4 flex items-center gap-2 italic">
               <BeakerIcon className="w-4 h-4" /> Producciones Activas
