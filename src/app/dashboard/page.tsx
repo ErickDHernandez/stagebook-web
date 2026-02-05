@@ -18,6 +18,7 @@ import StatusPopup from '@/src/components/StatusPop';
 import ErrorModal from '@/src/components/ErrorModal';
 
 export default function DashboardPage() {
+  const [projects, setProjects] = useState<any[]>([]); 
   const [showNotifications, setShowNotifications] = useState(false); 
   const [invitations, setInvitations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,7 +44,42 @@ export default function DashboardPage() {
   useEffect(() => {
     fetchInvitations();
     fetchMyCompanies();
+    fetchProjects();
   }, []);
+
+
+async function fetchProjects() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const { data, error } = await supabase
+    .from('projects')
+    .select(`
+      id,
+      title,
+      description,
+      theme_color,
+      status,
+      start_date,
+      project_characters ( id ) 
+    `)
+    .eq('founder_id', user.id)
+    .order('created_at', { ascending: false });
+
+  if (!error) {
+    // Mapeamos los datos para que coincidan con tu diseño visual
+    const formattedProjects = data.map(proj => ({
+      id: proj.id,
+      title: proj.title,
+      characters: proj.project_characters?.length || 0,
+      status: proj.status || 'Configuración',
+      color: proj.theme_color
+    }));
+    setProjects(formattedProjects);
+  } else {
+    console.error("Error cargando proyectos:", error);
+  }
+}
 
 async function fetchMyCompanies() {
   const { data: { user } } = await supabase.auth.getUser();
@@ -349,15 +385,19 @@ const visibleCompanies = showAllCompanies
         {/* GRID DE CONTENIDO PRINCIPAL */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
           
-          {/* COLUMNA IZQUIERDA: PROYECTOS (Ocupa 2 de 3 columnas) */}
+          {/* COLUMNA IZQUIERDA: PROYECTOS*/}
           <div className="lg:col-span-2 space-y-8">
             <h2 className="text-[10px] font-mono uppercase tracking-[0.3em] text-zinc-600 border-b border-zinc-900 pb-4 flex items-center gap-2 italic">
               <BeakerIcon className="w-4 h-4" /> Producciones Activas
             </h2>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {activeProjects.map((project) => (
-                <div key={project.id} className="group relative bg-zinc-900/20 border border-zinc-800 p-8 rounded-3xl hover:border-red-600 transition-all duration-500 overflow-hidden shadow-lg">
+              {projects.length > 0 ? (
+                projects.map((project) => (
+                <div 
+                  key={project.id} 
+                  className="group relative bg-zinc-900/20 border border-zinc-800 p-8 rounded-3xl hover:border-red-600 transition-all duration-500 overflow-hidden shadow-lg"
+                  >
                   <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-100 transition-opacity">
                     <TicketIcon className="w-12 h-12 -rotate-12 text-red-600" />
                   </div>
@@ -368,7 +408,16 @@ const visibleCompanies = showAllCompanies
                     <span className="px-2 py-1 bg-zinc-800 rounded text-zinc-400 hover:text-[#F9F6EE] transition-colors cursor-pointer">Ver Libreto</span>
                   </div>
                 </div>
-              ))}
+              ))
+            ) : (
+                    /* Estado vacío si no hay proyectos creados */
+      <div className="col-span-full py-20 border-2 border-dashed border-zinc-900 rounded-[2.5rem] flex flex-col items-center justify-center space-y-4">
+        <p className="text-[10px] font-mono text-zinc-700 uppercase tracking-widest italic">La cartelera está vacía</p>
+        <Link href="/proyectos/nuevo" className="text-red-600 text-[10px] font-bold uppercase underline hover:text-white transition-colors">
+          Fundar primer proyecto
+        </Link>
+      </div>
+            )}
             </div>
           </div>
 

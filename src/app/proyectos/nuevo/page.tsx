@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { 
   CloudArrowUpIcon, 
   DocumentTextIcon,
@@ -11,14 +12,18 @@ import {
   UserPlusIcon,
   CalendarDaysIcon,
   PlusIcon,
-  XMarkIcon, UserIcon, LinkIcon
+  XMarkIcon, UserIcon, LinkIcon, ArrowPathIcon
 } from '@heroicons/react/24/outline';
+import { supabase } from '@/src/lib/supabase';
+import { createFullProject } from '../projectService';
+import StatusPopup from '@/src/components/StatusPop';
 
 export default function NuevoProyectoPage() {
+  const router = useRouter();
   const [step, setStep] = useState(0);
   const [skipScript, setSkipScript] = useState(false);
   const [showCharModal, setShowCharModal] = useState(false);
-  const [newChar, setNewChar] = useState({ nombre: '', descripcion: '', fotoRef: '', videoRef: '',perfilUrl: '', userName:'' });
+  const [newChar, setNewChar] = useState({ nombre: '', descripcion: '', fotoRef: '', videoRef: '',perfilUrl: '', userName:'', fotoPerfilReal: '' });
   const [formData, setFormData] = useState({
     titulo: '',
     descripcion: '',
@@ -28,6 +33,15 @@ export default function NuevoProyectoPage() {
     fecha: '',
     color: '#dc2626'
   });
+  const [editingIndex, setEditingIndex] = useState<number | null > (null);
+  const [buscando, setBuscando] = useState(false);
+  const [resultadosBusqueda, setResultadosBusqueda] = useState<any[]>([]);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [status, setStatus] = useState<{
+    show: boolean;
+    message: string;
+    type: "success" | "error";
+}>({ show: false, message: "", type: "success" });
 
   // EFECTO: Si se sube un archivo, bloqueamos y desmarcamos el "skip"
   useEffect(() => {
@@ -49,15 +63,65 @@ export default function NuevoProyectoPage() {
   const handleNext = () => !isLocked && setStep((p) => Math.min(p + 1, 3));
   const handleBack = () => setStep((p) => Math.max(p - 1, 0));
 
+  const buscarArtistas = async (query: string) => {
+  setNewChar({ ...newChar, userName: query });
+  
+  if (query.length < 3) {
+    setResultadosBusqueda([]);
+    return;
+  }
 
-  const agregarPersonaje = () => {
-    if (!newChar.nombre) return;
+  setBuscando(true);
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, username, avatar_url, email')
+      .ilike('username', `%${query}%`)
+      .limit(5);
+
+    if (error) throw error;
+    setResultadosBusqueda(data || []);
+  } catch (err) {
+    console.error("Error buscando artistas:", err);
+  } finally {
+    setBuscando(false);
+  }
+};
+
+// Función para abrir el modal en modo edición
+const prepararEdicion = (index: number) => {
+  setEditingIndex(index);
+  setNewChar(formData.personajes[index]);
+  setShowCharModal(true);
+};
+
+const agregarPersonaje = () => {
+  if (!newChar.nombre) return;
+
+  if (editingIndex !== null) {
+    // Modo Edición: Reemplazamos el personaje en el índice correspondiente
+    const personajesActualizados = [...formData.personajes];
+    personajesActualizados[editingIndex] = newChar;
+    setFormData({ ...formData, personajes: personajesActualizados });
+  } else {
+    // Modo Creación: Añadimos uno nuevo
     setFormData({
       ...formData,
       personajes: [...formData.personajes, newChar]
     });
-    setNewChar({ nombre: '', descripcion: '', fotoRef: '', videoRef: '', perfilUrl: '', userName:'' });
+  }
+
+  // Limpiar y cerrar
+  setNewChar({ nombre: '', descripcion: '', fotoRef: '', videoRef: '', perfilUrl: '', userName: '', fotoPerfilReal: '' });
+  setEditingIndex(null);
+  setShowCharModal(false);
+};
+
+  // Modifica la función de cerrar el modal para limpiar el índice
+  const cerrarModal = () => {
     setShowCharModal(false);
+    setEditingIndex(null);
+    setNewChar({ nombre: '', descripcion: '', fotoRef: '', videoRef: '', perfilUrl: '', userName: '', fotoPerfilReal: '' });
   };
 
   const eliminarPersonaje = (index: number) => {
@@ -67,6 +131,40 @@ export default function NuevoProyectoPage() {
     });
   };
 
+const lanzarProyecto = async () => {
+  setBuscando(true);
+  setShowConfirmModal(false); 
+  
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Sesión expirada");
+
+    await createFullProject(formData, user.id);
+
+    // Mostramos éxito antes de irnos
+    setStatus({ 
+      show: true, 
+      message: "PROYECTO LANZADO CON ÉXITO", 
+      type: "success" 
+    });
+
+    // Esperamos un segundo para que el usuario vea el mensaje y redirigimos
+    setTimeout(() => {
+      router.push('/dashboard');
+    }, 1500);
+
+  } catch (err: any) {
+    setStatus({ 
+      show: true, 
+      message: err.message || "ERROR AL LANZAR PROYECTO", 
+      type: "error" 
+    });
+    setBuscando(false);
+
+    // Ocultar el error automáticamente tras 3 segundos
+    setTimeout(() => setStatus(prev => ({ ...prev, show: false })), 3000);
+  }
+};
   return (
     <div className="flex h-screen bg-black text-[#F9F6EE] overflow-hidden">
       
@@ -104,8 +202,26 @@ export default function NuevoProyectoPage() {
                   <input 
                     type="file" 
                     className="hidden" 
-                    onChange={(e) => setFormData({...formData, archivo: e.target.files?.[0] || null})} 
-                    accept=".pdf,.doc,.docx" 
+                    accept=".pdf,.doc,.docx" // Restricción visual en el selector de archivos
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+
+                      // 1. Validar extensión/tipo de archivo
+                      const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+                      if (!allowedTypes.includes(file.type)) {
+                        setStatus({ show: true, message: "SOLO PDF O WORD PERMITIDO", type: "error" });
+                        return;
+                      }
+
+                      // 2. Validar tamaño (10MB = 10 * 1024 * 1024 bytes)
+                      if (file.size > 10 * 1024 * 1024) {
+                        setStatus({ show: true, message: "EL ARCHIVO EXCEDE LOS 10MB", type: "error" });
+                        return;
+                      }
+
+                      setFormData({...formData, archivo: file});
+                    }} 
                   />
                   <CloudArrowUpIcon className={`w-12 h-12 ${formData.archivo ? 'text-green-500' : 'text-zinc-600 group-hover:text-red-600'}`} />
                   <div className="text-center">
@@ -172,17 +288,46 @@ export default function NuevoProyectoPage() {
               {formData.personajes.map((p, i) => (
                 <div key={i} className="p-5 bg-zinc-900/40 border border-zinc-800 rounded-2xl flex items-center justify-between group">
                   <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center overflow-hidden border border-zinc-700">
-                      {p.fotoRef ? <img src={p.fotoRef} className="w-full h-full object-cover" /> : <UserIcon className="w-5 h-5 text-zinc-600" />}
+
+                   <div className="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center overflow-hidden border border-zinc-700 shadow-xl">
+                      {p.fotoRef && p.fotoRef.trim() !== "" ? (
+                        <img 
+                          src={p.fotoRef} 
+                          className="w-full h-full object-cover" 
+                          alt={`Referencia ${p.nombre}`}
+                          onError={(e) => {
+                            // Si la URL es inválida, mostramos tu logo de respaldo
+                            (e.target as HTMLImageElement).src = '/avatar-placeholder.jpg';
+                            (e.target as HTMLImageElement).className = "w-12 h-12 rounded-full object-cover border border-zinc-800";
+                          }}
+                        />
+                      ) : (
+                        <img 
+                          src="/avatar-placeholder.jpg" 
+                          className="w-12 h-12 rounded-full object-cover border border-zinc-800" 
+                          alt="Default" 
+                        />
+                      )}
                     </div>
                     <div>
                       <p className="text-[10px] font-bold uppercase tracking-widest text-[#F9F6EE]">{p.nombre}</p>
                       <p className="text-[8px] font-mono text-zinc-500 uppercase">{p.descripcion || 'Sin descripción'}</p>
                     </div>
                   </div>
-                  <button onClick={() => eliminarPersonaje(i)} className="opacity-0 group-hover:opacity-100 p-2 text-zinc-500 hover:text-red-600 transition-all">
+                  <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                    <button 
+                      onClick={() => prepararEdicion(i)} 
+                      className="p-2 text-zinc-500 hover:text-white transition-all"
+                    >
+                      <PaintBrushIcon className="w-4 h-4" />
+                    </button>
+                  <button 
+                    onClick={() => eliminarPersonaje(i)} 
+                    className="opacity-0 group-hover:opacity-100 p-2 text-zinc-500 hover:text-red-600 transition-all"
+                  >
                     <XMarkIcon className="w-4 h-4" />
                   </button>
+                </div>
                 </div>
               ))}
 
@@ -237,17 +382,29 @@ export default function NuevoProyectoPage() {
           >
             <ChevronLeftIcon className="w-4 h-4" /> Atrás
           </button>
-          
-          <button 
-            onClick={handleNext}
-            disabled={isLocked}
-            className={`flex items-center gap-2 px-10 py-4 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all
-              ${isLocked 
-                ? 'bg-zinc-900 text-zinc-700 cursor-not-allowed border border-zinc-800' 
-                : 'bg-red-600 text-white shadow-[0_0_20px_rgba(220,38,38,0.3)] hover:scale-105 active:scale-95'}`}
-          >
-            {isLocked ? <>Bloqueado <LockClosedIcon className="w-4 h-4" /></> : <>Siguiente <ChevronRightIcon className="w-4 h-4" /></>}
-          </button>
+                        
+              <button 
+                onClick={() => {
+                  if (step === 3) {
+                    setShowConfirmModal(true); 
+                  } else {
+                    handleNext();
+                  }
+                }}
+                disabled={isLocked || buscando}
+                className={`flex items-center gap-2 px-10 py-4 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all
+                  ${isLocked || buscando 
+                    ? 'bg-zinc-900 text-zinc-700 cursor-not-allowed border border-zinc-800' 
+                    : 'bg-red-600 text-white shadow-[0_0_20px_rgba(220,38,38,0.3)] hover:scale-105 active:scale-95'}`}
+              >
+                {buscando ? (
+                  <><ArrowPathIcon className="w-4 h-4 animate-spin" /> Subiendo...</>
+                ) : step === 3 ? (
+                  <>Crear Proyecto <CheckCircleIcon className="w-4 h-4" /></>
+                ) : (
+                  <>Siguiente <ChevronRightIcon className="w-4 h-4" /></>
+                )}
+              </button>
         </div>
       </div>
 
@@ -276,7 +433,7 @@ export default function NuevoProyectoPage() {
               <div className="relative">
                 <LinkIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-600" />
                 <input 
-                  placeholder="URL FOTO DE REFERENCIA (PINTEREST/IG)"
+                  placeholder="URL FOTO DE REFERENCIA (GOOGLE)"
                   className="w-full bg-zinc-900 border border-zinc-800 p-4 pl-12 rounded-xl text-[10px] font-mono focus:border-red-600 outline-none"
                   value={newChar.fotoRef}
                   onChange={(e) => setNewChar({...newChar, fotoRef: e.target.value})}
@@ -297,8 +454,40 @@ export default function NuevoProyectoPage() {
                   placeholder='INVITAR UN ARTISTA AL PROYECTO'
                   className='w-full bg-zinc-900 border border-zinc-800 p-4 pl-12 rounded-xl text-[10px] font-mono focus:border-red-600 outline-none'
                   value={newChar.userName}
-                  onChange={(e) => setNewChar ({...newChar, userName: e.target.value})}
+                  onChange={(e) => buscarArtistas(e.target.value)}
                 />
+
+                {/* LISTA DE RESULTADOS */}
+                {resultadosBusqueda.length > 0 && (
+                  <div className="absolute top-full left-0 w-full mt-2 bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden z-50 shadow-2xl">
+                    {resultadosBusqueda.map((user) => (
+                      <button
+                        key={user.id}
+                        type="button"
+                        onClick={() => {
+                          setNewChar({ 
+                            ...newChar, 
+                            userName: user.username, 
+                            perfilUrl: user.id,
+                            fotoPerfilReal: user.avatar_url || ''
+                          });
+                          setResultadosBusqueda([]);
+                        }}
+                        className="w-full flex items-center gap-3 p-3 hover:bg-zinc-900 transition-colors border-b border-zinc-900 last:border-0"
+                      >
+                      <div className="w-8 h-8 rounded-full bg-zinc-800 overflow-hidden border border-zinc-700 flex items-center justify-center">
+                        {user.avatar_url ? (
+                          <img src={user.avatar_url} className="w-full h-full object-cover" alt={user.username} />
+                        ) : (
+                          <img src="/avatar-placeholder.jpg" className="w-8 h-8 rounded-full object-cover border border-zinc-800" alt="StageBook Default" /> 
+                        )}
+                      </div>
+                        <span className="text-[10px] font-bold uppercase">@{user.username}</span>
+                        {buscando && <ArrowPathIcon className="w-3 h-3 animate-spin ml-auto text-zinc-700" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -331,37 +520,51 @@ export default function NuevoProyectoPage() {
         {formData.descripcion || 'Esperando visión del director...'}
       </p>
 
-      {/* LISTA DINÁMICA DE REPARTO EN EL RESUMEN */}
-      <div className="pt-8 space-y-4">
-        <div className="flex items-center justify-between border-b border-zinc-900 pb-2">
-          <p className="text-[8px] font-mono text-zinc-600 uppercase tracking-widest">Reparto Detectado</p>
-          <span className="text-[10px] font-bold text-red-600">{formData.personajes.length}</span>
+{/* LISTA DINÁMICA DE REPARTO EN EL RESUMEN */}
+<div className="pt-8 space-y-4">
+  <div className="flex items-center justify-between border-b border-zinc-900 pb-2">
+    <p className="text-[8px] font-mono text-zinc-600 uppercase tracking-widest">Reparto Detectado</p>
+    <span className="text-[10px] font-bold text-red-600">{formData.personajes.length}</span>
+  </div>
+  
+  <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+    {formData.personajes.length > 0 ? (
+      formData.personajes.map((p, i) => (
+        <div key={i} className="flex items-center gap-3 animate-in slide-in-from-right-2 duration-300" style={{ transitionDelay: `${i * 50}ms` }}>
+
+          {/* CONTENEDOR DEL AVATAR */}
+          <div className="w-8 h-8 rounded-full bg-zinc-900 border border-zinc-800 flex-shrink-0 overflow-hidden flex items-center justify-center">
+            {p.perfilUrl && p.fotoPerfilReal ? ( 
+              /* 1. Prioridad: Foto del artista de StageBook */
+              <img src={p.fotoPerfilReal} alt={p.userName} className="w-full h-full object-cover" />
+            )  : (
+              /* 3. Respaldo: Tu logo personalizado */
+              <img src="/avatar-placeholder.jpg" className="w-8 h-8 object-cover" alt="Default" />
+            )}
+          </div>
+
+          <div className="flex flex-col">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-[#F9F6EE] leading-tight">
+              {p.nombre}
+            </p>
+            {/* PRIORIDAD: Si hay userName, mostramos la invitación */}
+            {p.userName ? (
+              <p className="text-[8px] font-mono text-red-600 uppercase mt-0.5">
+                Invitado: @{p.userName}
+              </p>
+            ) : (
+              <p className="text-[8px] font-mono text-zinc-500 uppercase mt-0.5">
+                {p.descripcion || 'Sin descripción'}
+              </p>
+            )}
+          </div>
         </div>
-        
-        <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-          {formData.personajes.length > 0 ? (
-            formData.personajes.map((p, i) => (
-              <div key={i} className="flex items-center gap-3 animate-in slide-in-from-right-2 duration-300" style={{ transitionDelay: `${i * 50}ms` }}>
-                <div className="w-8 h-8 rounded-full bg-zinc-900 border border-zinc-800 flex-shrink-0 overflow-hidden">
-                  {p.fotoRef ? (
-                    <img src={p.fotoRef} alt={p.nombre} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-[10px] text-zinc-700 font-bold">
-                      {p.nombre[0]}
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-[10px] font-bold uppercase tracking-tighter text-zinc-300">{p.nombre}</span>
-                  <span className="text-[7px] font-mono text-zinc-600 uppercase">Perfil Activo</span>
-                </div>
-              </div>
-            ))
-          ) : (
-            <p className="text-[9px] font-mono text-zinc-800 uppercase italic">No hay personajes asignados aún.</p>
-          )}
-        </div>
-      </div>
+      ))
+    ) : (
+      <p className="text-[9px] font-mono text-zinc-800 uppercase italic">No hay personajes asignados aún.</p>
+    )}
+  </div>
+</div>
 
       {/* Otros detalles rápidos */}
       <div className="grid grid-cols-2 gap-4 pt-4">
@@ -388,6 +591,46 @@ export default function NuevoProyectoPage() {
     </div>
   </div>
 </div>
+<StatusPopup 
+  show={status.show} 
+  message={status.message} 
+  type={status.type} 
+  onClose={() => setStatus(prev => ({ ...prev, show: false }))}
+/>
+{showConfirmModal && (
+  <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-300">
+    <div className="bg-zinc-950 border border-zinc-800 w-full max-w-sm rounded-3xl p-8 space-y-6 text-center shadow-2xl">
+      <div className="w-16 h-16 bg-red-600/10 rounded-full flex items-center justify-center mx-auto">
+        <CloudArrowUpIcon className="w-8 h-8 text-red-600" />
+      </div>
+      
+      <div className="space-y-2">
+        <h3 className="text-xl font-bold uppercase tracking-tighter">¿Lanzar Proyecto?</h3>
+        <p className="text-zinc-500 text-[10px] font-mono uppercase">
+          Se creará la producción "{formData.titulo}" y se enviarán las invitaciones a los artistas.
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <button 
+          onClick={() => {
+            setShowConfirmModal(false);
+            lanzarProyecto(); // Llama a tu función de Supabase
+          }}
+          className="w-full bg-red-600 text-white p-4 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-red-700 transition-all"
+        >
+          Sí, confirmar estreno
+        </button>
+        <button 
+          onClick={() => setShowConfirmModal(false)}
+          className="w-full bg-transparent text-zinc-500 p-4 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:text-white transition-all"
+        >
+          Revisar detalles
+        </button>
+      </div>
+    </div>
+  </div>
+)}
     </div>
   );
 }

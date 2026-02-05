@@ -6,7 +6,8 @@ import {
   TicketIcon, 
   CalendarIcon, 
   AdjustmentsHorizontalIcon, 
-  ArrowLeftOnRectangleIcon 
+  ArrowLeftOnRectangleIcon, 
+  FolderPlusIcon
 } from '@heroicons/react/24/outline';
 
 export default function Sidebar() {
@@ -42,6 +43,7 @@ export default function Sidebar() {
   const menuItems = [
     { name: 'Cartelera', icon: TicketIcon, href: '/dashboard' },
     { name: 'Agenda', icon: CalendarIcon, href: '/calendar' },
+    { name: 'Proyectos', icon: FolderPlusIcon, href: '/projects'},
     { name: 'Ajustes', icon: AdjustmentsHorizontalIcon, href: '/settings' },
   ];
 

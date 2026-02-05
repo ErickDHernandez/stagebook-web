@@ -83,3 +83,13 @@ export interface InvitadoTemporal {
   role: 'Actor' | 'Técnico' | 'Asistente de Dirección';
   avatar_url?: string;
 }
+// Tipo para los personajes que vienen del formulario
+export interface PersonajeProyecto {
+  nombre: string;
+  descripcion: string;
+  fotoRef: string;
+  fotoPerfilReal: string;
+  videoRef: string;
+  perfilUrl: string;
+  userName: string;
+}
